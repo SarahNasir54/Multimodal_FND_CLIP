@@ -7,19 +7,12 @@ import os
 import torch
 
 # Replace 'image_folder' with the actual path to your folder
-image_folder = 'twitter/images'
+#image_folder = 'twitter/images'
 train_file_path = "twitter/train.json" 
 test_file_path = "twitter/test.json"
 image_extensions = ['.jpg', '.jpeg', '.png', '.gif']
 model = SentenceTransformer("sentence-transformers/clip-ViT-B-32")
 
-
-# def find_image(image_name):
-#     for ext in image_extensions:
-#         image_path = f"{image_folder}/{image_name}{ext}"
-#         if os.path.exists(image_path):
-#             return image_path
-#     return None
 
 def prepare_clip_inputs(data):
     texts = []
