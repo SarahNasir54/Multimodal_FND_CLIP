@@ -1,0 +1,17 @@
+# Ignore directory
+__pycache__/
+Include/
+Lib/
+Scripts/
+share/
+
+# Ignore specific file extensions
+pyvenv.cfg
+
+
+# Ignore specific folders
+twitter/images/
+twitter/images_test
+twitter/images_train
+twitter/region_feature
+twitter/visual_feature
