@@ -51,7 +51,7 @@ bert_embedding = make_embeddings(file_path)
 clip_embedding = compute_clip_text(file_path)  # CLIP output
 
 # Initialize fusion module
-fusion_model = AttentionFusion()
+fusion_model = AttentionFusion(bert_dim=bert_dim, clip_dim=clip_dim, hidden_dim=hidden_dim)
 
 # Forward pass
 fused_output = fusion_model(bert_embedding, clip_embedding)
