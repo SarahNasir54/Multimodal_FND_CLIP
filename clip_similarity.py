@@ -8,8 +8,8 @@ import torch
 
 # Replace 'image_folder' with the actual path to your folder
 #image_folder = 'twitter/images'
-train_file_path = "twitter/train.json" 
-test_file_path = "twitter/test.json"
+train_file_path = "twitter/train.jsonl" 
+test_file_path = "twitter/test.jsonl"
 image_extensions = ['.jpg', '.jpeg', '.png', '.gif']
 model = SentenceTransformer("sentence-transformers/clip-ViT-B-32")
 
@@ -32,7 +32,7 @@ def prepare_clip_inputs(data):
                 item_count += 1
             except Exception as e:
                 print(f"Error loading image {image_name}: {e}")
-    print(f"Total items added: {item_count}")
+    #print(f"Total items added: {item_count}")
     return texts, images
 
 def compute_clip_similarity(texts, images):
@@ -44,25 +44,38 @@ def compute_clip_similarity(texts, images):
 
     # Compute cosine similarity
     cos_scores = util.cos_sim(img_embeddings, text_embeddings)
-    return clip_embeddings, cos_scores
+
+    return text_embeddings #, clip_embeddings, cos_scores
+
+def compute_clip_text(file_path):
+    data = load_data(file_path)
+    texts, images = prepare_clip_inputs(data)
+    if texts and images: 
+        # Compute similarities
+        text_embeddings = compute_clip_similarity(texts, images)
+        print("Text embedding matrix:")
+        print(text_embeddings.shape)
+    
+    return text_embeddings
 
 def main(file_path):
     data = load_data(file_path, percentage=0.1)
-    #print(data)
-    # Prepare text-image pairs
-    texts, images = prepare_clip_inputs(data)
+    text_embeddings = compute_clip_text(file_path)
 
-    if texts and images: 
-        # Compute similarities
-        clip_embedding, cos_scores = compute_clip_similarity(texts, images)
-        print("Cosine similarity matrix:")
-        print(cos_scores.shape)
-        print("Clip embedding shape:", clip_embedding.shape)
-    else:
-        print("No valid text-image pairs found.")
+    # Prepare text-image pairs
+    # texts, images = prepare_clip_inputs(data)
+
+    # if texts and images: 
+    #     # Compute similarities
+    #     clip_embedding, cos_scores = compute_clip_similarity(texts, images)
+    #     print("Cosine similarity matrix:")
+    #     print(cos_scores.shape)
+    #     print("Clip embedding shape:", clip_embedding.shape)
+    # else:
+    #     print("No valid text-image pairs found.")
 
 if __name__ == "__main__":
     import warnings
     warnings.filterwarnings("ignore")
-    main(train_file_path)
+    #main(train_file_path)
 

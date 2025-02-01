@@ -13,5 +13,8 @@ pyvenv.cfg
 twitter/images/
 twitter/images_test
 twitter/images_train
-twitter/region_feature
+twitter/region_features
 twitter/visual_feature
+
+#Ignore files
+faltu.py

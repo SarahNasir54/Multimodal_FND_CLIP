@@ -44,13 +44,14 @@ def extract_global_visual_feature(args):
             with torch.no_grad():
                 img_tensors = []
                 for record in records:
-                    img_path = os.path.join(args.image_dir, record['image'])
+                    img_name = record['image']
+                    img_path = os.path.join(args.image_dir, img_name)
                     img = Image.open(img_path).convert('RGB')
                     img = resnet_image_transforms(img) #.cuda()
                     img_tensors.append(img)
                 imgs = torch.stack(img_tensors)
-                feature1s = resnet(imgs).cpu()  # feature size 2048*7*7
-                feature2s = resnet_pool(feature1s).squeeze(-1).squeeze(-1).cpu()  # feature size 2048
+                feature1s = resnet(imgs) #.cpu()  # feature size 2048*7*7
+                feature2s = resnet_pool(feature1s).squeeze(-1).squeeze(-1) #.cpu()  # feature size 2048
                 # save feature
                 for i, record in enumerate(records):
                     img_id = record['id']
@@ -64,27 +65,32 @@ def extract_global_visual_feature(args):
             error_records.append(records)
 
     batch_size = 150
-    for f in ['test.json', 'train.json']:
+    for f in ['train.jsonl', 'test.jsonl']:
         f = os.path.join(args.dataset_dir, f)
         with open(f, encoding='utf8') as data:
-            records = json.load(data)  # Load the entire JSON array
-            # Process records in batches
-            for i in range(0, len(records), batch_size):
-                batch = records[i:i + batch_size]
-                deal_batch(batch)
+            records = []
+            for line in tqdm(data):
+                line = json.loads(line)
+                records.append(line)
+                if len(records) >= batch_size:
+                    deal_batch(records)
+                    records.clear()
+            if len(records) > 0:
+                deal_batch(records)
 
 
 def extract_entity_level_visual_feature(args):
     max_boxes = 20
     feature_size = 2048
-    device = torch #.device('cuda')
+    #device = torch.device('cuda')
+    device = torch.device('cpu')
     # Faster-RCNN
-    fast_rcnn = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=True) #.to(device)
+    fast_rcnn = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=True).to(device)
     fast_rcnn.eval()
     # Resnet
     resnet = torchvision.models.resnet152(pretrained=True)
     modules = list(resnet.children())[0:-1]
-    resnet = nn.Sequential(*modules) #.to(device)
+    resnet = nn.Sequential(*modules).to(device)
     resnet.eval()
     # transforms
     resnet_image_transforms = transforms.Compose(
@@ -119,18 +125,18 @@ def extract_entity_level_visual_feature(args):
             else:
                 regions = regions.to(device)
                 features = resnet(regions).squeeze(-1).squeeze(-1)
-            save_dict = {'box_num': box_num, 'features': features.cpu().numpy(),
-                         'boxes': output['boxes'][0:box_num].int().cpu().numpy(),
-                         'labels': output['labels'][0:box_num].cpu().numpy(),
-                         'scores': output['scores'][0:box_num].cpu().numpy()}
+            save_dict = {'box_num': box_num, 'features': features, #.cpu().numpy(),
+                         'boxes': output['boxes'][0:box_num].int(), #.cpu().numpy(),
+                         'labels': output['labels'][0:box_num], #.cpu().numpy(),
+                         'scores': output['scores'][0:box_num]} #.cpu().numpy()}
             with open(feature_path, mode='wb') as f:
                 pickle.dump(save_dict, f)
 
     image_list = []
     error_image_list = []
-    for f in ['train.json', 'test.json']:
+    for f in ['train.jsonl', 'test.jsonl']:
         with open(os.path.join(args.dataset_dir, f), encoding='utf8') as ff:
-            images = [json.loads(line) for line in ff if line.strip()]
+            images = [json.loads(line)['image'] for line in ff]
             image_list += images
     for image_name in tqdm(image_list):
         try:
