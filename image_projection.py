@@ -1,7 +1,6 @@
 import pickle
 import torch
 import numpy as np
-import torch.nn.functional as F
 import torch.nn as nn
 import os
 from data_loader import load_data

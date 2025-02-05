@@ -1,9 +1,6 @@
 import torch
 import torch.nn as nn
-#import torch.optim as optim
 import torch.nn.functional as F
-#from torch.utils.data import DataLoader
-#import numpy as np
 from clip_similarity import compute_clip_similarity, prepare_clip_inputs
 from data_loader import load_data
 

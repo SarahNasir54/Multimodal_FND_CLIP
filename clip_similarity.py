@@ -3,7 +3,6 @@ from data_loader import load_data
 from data_loader import preprocess_post_text
 from data_loader import find_image
 from sentence_transformers import SentenceTransformer, util
-import os
 import torch
 
 #image_folder = 'twitter/images'
