@@ -1,12 +1,16 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from data_loader import make_embeddings
-from clip_similarity import compute_clip_text
+from data_loader import make_embeddings, load_data
+from clip_similarity import compute_clip_similarity, prepare_clip_inputs
 
 bert_dim = 768
 clip_dim = 512
 hidden_dim = 256
+
+# ===============================
+# Attention-features for CLIP and BERT Embedding
+# ===============================
 
 class AttentionFusion(nn.Module):
     def __init__(self, bert_dim, clip_dim, hidden_dim):
@@ -44,15 +48,64 @@ class AttentionFusion(nn.Module):
         fused_embedding = self.fusion_proj(fused_embedding)  # [1271, 256]
 
         return fused_embedding  # Final shape: [1271, 256]
+    
+# ===============================
+# Projection Classifier Model
+# ===============================
 
-file_path = "twitter/train.jsonl"
-# Example input tensors
-bert_embedding = make_embeddings(file_path)
-clip_embedding = compute_clip_text(file_path)  # CLIP output
+class ProjectionClassifier(nn.Module):
+    def __init__(self, input_dim):
+        super(ProjectionClassifier, self).__init__()
+        
+        # Projection Head
+        self.projection_head = nn.Sequential(
+            nn.Linear(input_dim, 256),
+            nn.ReLU(),
+            nn.Linear(256, 64),
+            nn.ReLU()
+        )
+        
+        # Classifier
+        self.classifier = nn.Sequential(
+            nn.Linear(64, 64),
+            nn.ReLU(),
+            nn.Linear(64, 2)  # Output: 2 classes
+        )
+    
+    def forward(self, x):
+        x = self.projection_head(x)
+        x = self.classifier(x)
+        return x
+    
+def load_clip_embedding(file_path):
+    data = load_data(file_path, percentage=0.1)
+    # Prepare text-image pairs
+    texts, images = prepare_clip_inputs(data)
 
-# Initialize fusion module
-fusion_model = AttentionFusion(bert_dim=bert_dim, clip_dim=clip_dim, hidden_dim=hidden_dim)
+    if texts and images: 
+        text_embeddings, _, _, _ = compute_clip_similarity(texts, images)
 
-# Forward pass
-fused_output = fusion_model(bert_embedding, clip_embedding)
-print(f"Fused Output Shape: {fused_output.shape}")  # Expected: [1271, 256]
+    return text_embeddings
+
+def text_features(file_path):
+    # Example input tensors
+    bert_embedding = make_embeddings(file_path)
+    clip_text_embedding = load_clip_embedding(file_path)  # CLIP output
+
+    # Initialize fusion module
+    fusion_model = AttentionFusion(bert_dim=bert_dim, clip_dim=clip_dim, hidden_dim=hidden_dim)
+    fused_output = fusion_model(bert_embedding, clip_text_embedding)
+    print(f"Fused Output Shape: {fused_output.shape}")  # Expected: [1271, 256]
+
+    # Initialize Projection Classifier
+    projection_classifier = ProjectionClassifier(input_dim=fused_output.shape[1])
+    classification_output = projection_classifier(fused_output)
+    print(f"Projection Output Shape: {classification_output.shape}")
+
+
+def main():
+    file_path = "twitter/train.jsonl"
+    text_features(file_path)
+
+if __name__ == "__main__":
+    main()

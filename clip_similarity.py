@@ -6,7 +6,6 @@ from sentence_transformers import SentenceTransformer, util
 import os
 import torch
 
-# Replace 'image_folder' with the actual path to your folder
 #image_folder = 'twitter/images'
 train_file_path = "twitter/train.jsonl" 
 test_file_path = "twitter/test.jsonl"
@@ -45,37 +44,25 @@ def compute_clip_similarity(texts, images):
     # Compute cosine similarity
     cos_scores = util.cos_sim(img_embeddings, text_embeddings)
 
-    return text_embeddings #, clip_embeddings, cos_scores
-
-def compute_clip_text(file_path):
-    data = load_data(file_path)
-    texts, images = prepare_clip_inputs(data)
-    if texts and images: 
-        # Compute similarities
-        text_embeddings = compute_clip_similarity(texts, images)
-        print("Text embedding matrix:")
-        print(text_embeddings.shape)
-    
-    return text_embeddings
+    return text_embeddings, img_embeddings , clip_embeddings, cos_scores
 
 def main(file_path):
     data = load_data(file_path, percentage=0.1)
-    text_embeddings = compute_clip_text(file_path)
-
     # Prepare text-image pairs
-    # texts, images = prepare_clip_inputs(data)
+    texts, images = prepare_clip_inputs(data)
 
-    # if texts and images: 
-    #     # Compute similarities
-    #     clip_embedding, cos_scores = compute_clip_similarity(texts, images)
-    #     print("Cosine similarity matrix:")
-    #     print(cos_scores.shape)
-    #     print("Clip embedding shape:", clip_embedding.shape)
-    # else:
-    #     print("No valid text-image pairs found.")
+    if texts and images: 
+        text_embeddings, image_embeddings, clip_embeddings, cos_scores = compute_clip_similarity(texts, images)
+        print("text embedding matrix:")
+        print(text_embeddings.shape)
+        print("image embedding shape:", image_embeddings.shape)
+        print("clip embedding shape:", clip_embeddings.shape)
+        print("clip similarity score shape:", cos_scores.shape)
+    else:
+        print("No valid text-image pairs found.")
 
 if __name__ == "__main__":
     import warnings
     warnings.filterwarnings("ignore")
-    #main(train_file_path)
+    main(train_file_path)
 

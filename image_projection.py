@@ -5,12 +5,30 @@ import torch.nn.functional as F
 import torch.nn as nn
 import os
 from data_loader import load_data
+from clip_similarity import prepare_clip_inputs, compute_clip_similarity
 
 region_image_embeds = 5
 g = 5
 file_path = "twitter/train.jsonl"
 data_dir = "twitter"
 batch_size = 64
+
+# ===============================
+# Attention-Based Aggregator for CLIP Features
+# ===============================
+
+class AttentionAggregator(nn.Module):
+    def __init__(self, input_dim):
+        super().__init__()
+        self.attention = nn.Linear(input_dim, 1)
+
+    def forward(self, x):
+        attn_weights = torch.softmax(self.attention(x), dim=0)  # Compute attention scores
+        return torch.sum(attn_weights * x, dim=0)  # Weighted sum of features
+    
+# ===============================
+# Projection Classifier Model
+# ===============================
 
 class ProjectionClassifier(nn.Module):
     def __init__(self, input_dim):
@@ -36,20 +54,25 @@ class ProjectionClassifier(nn.Module):
         x = self.classifier(x)
         return x
 
+# ===============================
+# Feature Extraction and Concatenation
+# ===============================
 
 def get_image_features(file_path, data_dir, g, region_image_embeds):
     data = load_data(file_path, percentage=0.1)
 
     for entry in data:
+        #Global visual features
         feature_file = os.path.join(data_dir, 'visual_feature/{}.pkl'.format(entry["post_id"]))
         if not os.path.exists(feature_file):
             continue
         with open(feature_file, mode='rb') as f:
             image = pickle.load(f)['feature1']
             image = torch.Tensor(image)
-            visual_features = torch.mean(image, dim=(1, 2))  # This will result in a shape of [2048], because we reduce dimensions (7, 7)
-            visual_features = visual_features.unsqueeze(0).repeat(g, 1)  # Shape: [g, 2048]
+            visual_features = torch.mean(image, dim=(1, 2))  # [2048]
+            visual_features = visual_features.unsqueeze(0).repeat(g, 1)  # Shape: [5, 2048]
 
+        #Entity level features
         feature_file = os.path.join(data_dir, 'region_features/{}.pkl'.format(entry["image"]))
         if not os.path.exists(feature_file):
             continue
@@ -62,11 +85,25 @@ def get_image_features(file_path, data_dir, g, region_image_embeds):
  
 
         concatenated_tensor = torch.cat([visual_features, region_image_feature], dim=0)
+    
+    #Clip image embedding
+    texts, images = prepare_clip_inputs(data)
 
-    return concatenated_tensor
+    if texts and images: 
+        _, clip_image_embeddings, _, _ = compute_clip_similarity(texts, images)
+        print("Clip Image embedding shape:", clip_image_embeddings.shape)
+
+    aggregator = AttentionAggregator(512)
+    clip_aggregated = aggregator(clip_image_embeddings)  # Shape: [512]
+    clip_aggregated = clip_aggregated.unsqueeze(0).repeat(g, 1)  # [5, 512]
+    print("clip aggregated features:", clip_aggregated.shape)
+
+    concatenated_features = torch.cat([clip_aggregated, visual_features, region_image_feature], dim=1)  # [5, 4608]
+
+    return concatenated_features
 
 image_features = get_image_features(file_path, data_dir, g, region_image_embeds)
-print(image_features.shape)
+print("All concatenated features:", image_features.shape)
 if image_features is not None:
     feature_dim = image_features.shape[1]  # Get the feature dimension
 
