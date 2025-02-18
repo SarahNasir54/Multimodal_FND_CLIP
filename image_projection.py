@@ -53,6 +53,14 @@ class ProjectionClassifier(nn.Module):
         x = self.classifier(x)
         return x
 
+class ImageFeatureProjector(nn.Module):
+    def __init__(self, input_dim=4608, output_dim=256):
+        super().__init__()
+        self.projection = nn.Linear(input_dim, output_dim)  
+
+    def forward(self, x):
+        return self.projection(x)
+
 # ===============================
 # Feature Extraction and Concatenation
 # ===============================
@@ -90,27 +98,39 @@ def get_image_features(file_path, data_dir, g, region_image_embeds):
 
     if texts and images: 
         _, clip_image_embeddings, _, _ = compute_clip_similarity(texts, images)
-        print("Clip Image embedding shape:", clip_image_embeddings.shape)
+        #print("Clip Image embedding shape:", clip_image_embeddings.shape)
 
     aggregator = AttentionAggregator(512)
     clip_aggregated = aggregator(clip_image_embeddings)  # Shape: [512]
     clip_aggregated = clip_aggregated.unsqueeze(0).repeat(g, 1)  # [5, 512]
-    print("clip aggregated features:", clip_aggregated.shape)
+    #print("clip aggregated features:", clip_aggregated.shape)
 
     concatenated_features = torch.cat([clip_aggregated, visual_features, region_image_feature], dim=1)  # [5, 4608]
 
-    return concatenated_features
+    projector = ImageFeatureProjector(input_dim=4608, output_dim=256)
+    projected_features = projector(concatenated_features)
 
-image_features = get_image_features(file_path, data_dir, g, region_image_embeds)
-print("All concatenated features:", image_features.shape)
-if image_features is not None:
-    feature_dim = image_features.shape[1]  # Get the feature dimension
+    return projected_features
 
-    image_projection = ProjectionClassifier(input_dim=feature_dim)
 
-    # Forward pass
-    output = image_projection(image_features)
-    print("Image Projection Output Shape:", output.shape)  # Expected: [batch_size, 2]
-else:
-    print("No valid image features found.")
+def image_features(file_path):
+    image_features = get_image_features(file_path, data_dir, g, region_image_embeds)
+    print("Image features:", image_features.shape)
+    if image_features is not None:
+        feature_dim = image_features.shape[1]  # Get the feature dimension
+
+        image_projection = ProjectionClassifier(input_dim=feature_dim)
+
+        # Forward pass
+        output = image_projection(image_features)
+        print("Image Projection Output Shape:", output.shape)  # Expected: [batch_size, 2]
+    else:
+        print("No valid image features found.")
+
+def main():
+    file_path = "twitter/train.jsonl"
+    image_features(file_path)
+
+if __name__ == "__main__":
+    main()
 

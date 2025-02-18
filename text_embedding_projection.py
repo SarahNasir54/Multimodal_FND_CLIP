@@ -95,12 +95,14 @@ def text_features(file_path):
     # Initialize fusion module
     fusion_model = AttentionFusion(bert_dim=bert_dim, clip_dim=clip_dim, hidden_dim=hidden_dim)
     fused_output = fusion_model(bert_embedding, clip_text_embedding)
-    print(f"Fused Output Shape: {fused_output.shape}")  # Expected: [1271, 256]
+    #print(f"Fused Output Shape: {fused_output.shape}")  # Expected: [1271, 256]
 
     # Initialize Projection Classifier
     projection_classifier = ProjectionClassifier(input_dim=fused_output.shape[1])
     classification_output = projection_classifier(fused_output)
-    print(f"Projection Output Shape: {classification_output.shape}")
+    #print(f"Text Projection Output Shape: {classification_output.shape}")
+
+    return fused_output #[1271, 256]
 
 
 def main():

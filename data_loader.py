@@ -4,6 +4,7 @@ from transformers import AutoTokenizer, AutoModel
 import torch
 import random
 import os
+from sklearn.preprocessing import LabelEncoder
 
 
 
@@ -57,11 +58,26 @@ def make_embeddings(file_path):
 
     return embedding
     
+def get_labels(file_path):
+    data = load_data(file_path)
+    all_labels = [post.get("label", "") for post in data]
+
+    label_encoder = LabelEncoder()
+    encoded_labels = label_encoder.fit_transform(all_labels) 
+
+    encoded_labels = torch.tensor(encoded_labels, dtype=torch.long) 
+
+    #print(label_encoder.classes_)  
+    #print(encoded_labels)
+
+    return encoded_labels
                 
 def main(file_path):
     
-    embedding = make_embeddings(file_path)
-    print("Embedding features shape:", embedding.shape)
+    #embedding = make_embeddings(file_path)
+    #print("Embedding features shape:", embedding.shape)
+
+    labels = get_labels(file_path)
 
     
 if __name__ == "__main__":

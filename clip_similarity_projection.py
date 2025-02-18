@@ -10,15 +10,15 @@ batch_size = 64
 # Projection and classifier
 # ==========================
 class ProjectionHead(nn.Module):
-    def __init__(self, input_dim=512, output_dim=64):
+    def __init__(self, input_dim=512, output_dim=256):
         super(ProjectionHead, self).__init__()
         # Text Projection
-        self.fc1_text = nn.Linear(input_dim, 256)
-        self.fc2_text = nn.Linear(256, 64)
+        self.fc1_text = nn.Linear(input_dim, 512)
+        self.fc2_text = nn.Linear(512, output_dim)
 
         # Image Projection
         self.fc1_image = nn.Linear(input_dim, 256)
-        self.fc2_image = nn.Linear(256, 64)
+        self.fc2_image = nn.Linear(256, output_dim)
 
     def forward(self, x):
         text_features = F.relu(self.fc1_text(x[:, :512]))  # First 512 = text
@@ -30,7 +30,7 @@ class ProjectionHead(nn.Module):
         return text_features + image_features
 
 class Classifier(nn.Module):
-    def __init__(self, input_dim=64, output_dim=2):
+    def __init__(self, input_dim=256, output_dim=256):
         super(Classifier, self).__init__()
         self.fc1 = nn.Linear(input_dim, 64)   # Hidden size 64
         self.fc2 = nn.Linear(64, output_dim)  # Output size 2
@@ -71,7 +71,7 @@ def load_clip_similarity(file_path, similarity):
 
     if texts and images: 
         _, _, clip_embeddings, clip_similarity = compute_clip_similarity(texts, images)
-        print("Clip Embeddings Shape:", clip_embeddings.shape)
+        #print("Clip Embeddings Shape:", clip_embeddings.shape)
 
         # Extract self-similarity
         clip_sim = clip_similarity.diag()
@@ -79,8 +79,8 @@ def load_clip_similarity(file_path, similarity):
         similarity.update(clip_sim)
         standardized_sim = similarity.standardize(clip_sim)
 
-        print("Clip Embeddings Shape:", clip_embeddings.shape)
-        print("Standardized Similarity Shape:", standardized_sim.shape)
+        #print("Clip Embeddings Shape:", clip_embeddings.shape)
+        #print("Standardized Similarity Shape:", standardized_sim.shape)
 
     return clip_embeddings, standardized_sim
 
@@ -95,9 +95,9 @@ def apply_projection(clip_embeddings, standardized_sim, projection_head, classif
 
     return output
 
-def main(file_path):
-    projection_head = ProjectionHead(input_dim=512)  
-    classifier = Classifier(input_dim=64)  
+def clip_features(file_path):
+    projection_head = ProjectionHead(input_dim=512,  output_dim=256)  
+    classifier = Classifier(input_dim=256)  
 
     similarity_stats = Normalization()
     clip_embeddings, similarity = load_clip_similarity(file_path, similarity_stats)
@@ -105,9 +105,10 @@ def main(file_path):
     # Apply projection and classification
     output = apply_projection(clip_embeddings, similarity, projection_head, classifier)
     
-    print("Final Output Shape:", output.shape)
-    print(output)
+    #print("Clip projection output:", output.shape)
+    #print(output)
+    return output
 
 if __name__ == '__main__':
     train_file_path = "twitter/train.jsonl" 
-    main(train_file_path)
+    clip_features(train_file_path)
