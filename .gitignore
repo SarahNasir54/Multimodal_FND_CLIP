@@ -11,6 +11,7 @@ pyvenv.cfg
 
 # Ignore specific folders
 twitter/images/
+weibo/visual_feature_weibo/
 twitter/images_test
 twitter/images_train
 twitter/region_features

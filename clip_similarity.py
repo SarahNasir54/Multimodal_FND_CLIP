@@ -1,67 +1,71 @@
 from PIL import Image
-from data_loader import load_data
-from data_loader import preprocess_post_text
-from data_loader import find_image
+from data_loader import load_data, preprocess_post_text, find_image
 from sentence_transformers import SentenceTransformer, util
 import torch
 
-#image_folder = 'twitter/images'
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# load CLIP Model on GPU
+model = SentenceTransformer("sentence-transformers/clip-ViT-B-32").to(device)
+
 train_file_path = "twitter/train.jsonl" 
 test_file_path = "twitter/test.jsonl"
-image_extensions = ['.jpg', '.jpeg', '.png', '.gif']
-model = SentenceTransformer("sentence-transformers/clip-ViT-B-32")
 
-
+# ===============================
+# **Prepare CLIP Input Pairs**
+# ===============================
 def prepare_clip_inputs(data):
+    #print("Preparing inputs for CLIP...")
     texts = []
     images = []
-    item_count = 0
+    successful_images = 0
 
     for item in data:
-        post_text = item.get('post_text')  
-        post_text = preprocess_post_text(post_text)
+        post_text = item.get('post_text')
+        post_text = preprocess_post_text(post_text) 
+        tokens = post_text.split()[:77]  # Truncate to 77 tokens
+        short_text = " ".join(tokens) 
         image_name = item.get('image')    
-        image_path = find_image(image_name)
+        image_path = find_image(image_name) 
+
         if image_path:  
-            try:
-                image = Image.open(image_path).convert("RGB")
-                texts.append(post_text)
-                images.append(image)
-                item_count += 1
-            except Exception as e:
-                print(f"Error loading image {image_name}: {e}")
-    #print(f"Total items added: {item_count}")
-    return texts, images
+            image = Image.open(image_path).convert("RGB")
+            texts.append(short_text)
+            images.append(image)
+            successful_images += 1
+
+    #print(f"Successfully Loaded Image-Text Pairs: {successful_images}")
+    #print(f"Total Texts: {len(texts)}, Total Images: {len(images)}")
+    return texts, images  
+
 
 def compute_clip_similarity(texts, images):
-    # Encode images and texts
-    img_embeddings = model.encode(images, batch_size=8, convert_to_tensor=True)
-    text_embeddings = model.encode(texts, batch_size=8, convert_to_tensor=True)
+    #print("Computing CLIP similarity...")
+
+    img_embeddings = model.encode(images, batch_size=32, convert_to_tensor=True).to(device)
+    text_embeddings = model.encode(texts, batch_size=32, convert_to_tensor=True).to(device)
 
     clip_embeddings = torch.cat((img_embeddings, text_embeddings), dim=1)
 
-    # Compute cosine similarity
-    cos_scores = util.cos_sim(img_embeddings, text_embeddings)
+    cos_scores = util.cos_sim(img_embeddings, text_embeddings).to(device)
 
-    return text_embeddings, img_embeddings , clip_embeddings, cos_scores
+    return text_embeddings, img_embeddings, clip_embeddings, cos_scores
 
-def main(file_path):
-    data = load_data(file_path, percentage=0.1)
-    # Prepare text-image pairs
-    texts, images = prepare_clip_inputs(data)
+# def main(file_path,device):
+#     print("Computing CLIP similarity...")
+#     data = load_data(file_path, percentage=0.1) 
 
-    if texts and images: 
-        text_embeddings, image_embeddings, clip_embeddings, cos_scores = compute_clip_similarity(texts, images)
-        print("text embedding matrix:")
-        print(text_embeddings.shape)
-        print("image embedding shape:", image_embeddings.shape)
-        print("clip embedding shape:", clip_embeddings.shape)
-        print("clip similarity score shape:", cos_scores.shape)
-    else:
-        print("No valid text-image pairs found.")
+#     texts, images = prepare_clip_inputs(data)
 
-if __name__ == "__main__":
-    import warnings
-    warnings.filterwarnings("ignore")
-    main(train_file_path)
+#     text_embeddings, image_embeddings, clip_embeddings, cos_scores = compute_clip_similarity(texts, images)
 
+#     print("Text Embedding Shape:", text_embeddings.shape)
+#     print("Image Embedding Shape:", image_embeddings.shape)
+#     print("CLIP Embedding Shape:", clip_embeddings.shape)
+#     print("CLIP Similarity Score Shape:", cos_scores.shape)
+
+
+# if __name__ == "__main__":
+#     import warnings
+#     warnings.filterwarnings("ignore")
+#     main(test_file_path,device)

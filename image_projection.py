@@ -6,14 +6,15 @@ import os
 from data_loader import load_data
 from clip_similarity import prepare_clip_inputs, compute_clip_similarity
 
-region_image_embeds = 5
-g = 5
+g = 5  
 file_path = "twitter/train.jsonl"
 data_dir = "twitter"
 batch_size = 64
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 # ===============================
-# Attention-Based Aggregator for CLIP Features
+# **Attention-Based Aggregator for CLIP Features**
 # ===============================
 
 class AttentionAggregator(nn.Module):
@@ -22,115 +23,84 @@ class AttentionAggregator(nn.Module):
         self.attention = nn.Linear(input_dim, 1)
 
     def forward(self, x):
-        attn_weights = torch.softmax(self.attention(x), dim=0)  # Compute attention scores
-        return torch.sum(attn_weights * x, dim=0)  # Weighted sum of features
-    
-# ===============================
-# Projection Classifier Model
-# ===============================
-
-class ProjectionClassifier(nn.Module):
-    def __init__(self, input_dim):
-        super(ProjectionClassifier, self).__init__()
-        
-        # Projection Head
-        self.projection_head = nn.Sequential(
-            nn.Linear(input_dim, 256),
-            nn.ReLU(),
-            nn.Linear(256, 64),
-            nn.ReLU()
-        )
-        
-        # Classifier
-        self.classifier = nn.Sequential(
-            nn.Linear(64, 64),
-            nn.ReLU(),
-            nn.Linear(64, 2)  # Output: 2 classes
-        )
-    
-    def forward(self, x):
-        x = self.projection_head(x)
-        x = self.classifier(x)
-        return x
-
-class ImageFeatureProjector(nn.Module):
-    def __init__(self, input_dim=4608, output_dim=256):
-        super().__init__()
-        self.projection = nn.Linear(input_dim, output_dim)  
-
-    def forward(self, x):
-        return self.projection(x)
+        attn_weights = torch.softmax(self.attention(x), dim=0)  
+        return torch.sum(attn_weights * x, dim=0)  
 
 # ===============================
-# Feature Extraction and Concatenation
+# **Feature Extraction and Concatenation**
 # ===============================
 
-def get_image_features(file_path, data_dir, g, region_image_embeds):
-    data = load_data(file_path, percentage=0.1)
+def get_image_features(file_path, data_dir, g, device):
+    data = load_data(file_path, percentage=0.3) 
+
+    texts, images = prepare_clip_inputs(data)
+    clip_image_embeddings = None
+    if texts and images:
+        _, clip_image_embeddings, _, _ = compute_clip_similarity(texts, images)
+
+    clip_image_embeddings = clip_image_embeddings.to(device)
+
+    all_image_features = []  
+
+    print("Processing images...")
 
     for entry in data:
-        #Global visual features
-        feature_file = os.path.join(data_dir, 'visual_feature/{}.pkl'.format(entry["post_id"]))
+        feature_file = os.path.join(data_dir, f'visual_feature/{entry["post_id"]}.pkl')
         if not os.path.exists(feature_file):
-            continue
+            continue  
+        
         with open(feature_file, mode='rb') as f:
-            image = pickle.load(f)['feature1']
-            image = torch.Tensor(image)
-            visual_features = torch.mean(image, dim=(1, 2))  # [2048]
-            visual_features = visual_features.unsqueeze(0).repeat(g, 1)  # Shape: [5, 2048]
+            image = pickle.load(f).get('feature1', None)
+            if image is None:
+                continue
+            
+            image = torch.Tensor(image).to(device)  
+            visual_features = torch.mean(image, dim=(1, 2))  
+            visual_features = visual_features.unsqueeze(0).repeat(g, 1).to(device)  
 
-        #Entity level features
-        feature_file = os.path.join(data_dir, 'region_features/{}.pkl'.format(entry["image"]))
-        if not os.path.exists(feature_file):
-            continue
-        with open(feature_file, mode='rb') as f:
-            region_image_feature = pickle.load(f)['features']
-            region_feature_length = region_image_feature.shape[0]
-            if region_feature_length < 20:
-                region_image_feature = np.vstack([region_image_feature, np.zeros((20 - region_feature_length, 2048))])
-            region_image_feature = torch.Tensor(region_image_feature)[:region_image_embeds, :]
- 
+        aggregator = AttentionAggregator(512).to(device)
+        clip_aggregated = aggregator(clip_image_embeddings)  
+        clip_aggregated = clip_aggregated.unsqueeze(0).repeat(g, 1).to(device)  
 
-        concatenated_tensor = torch.cat([visual_features, region_image_feature], dim=0)
-    
-    #Clip image embedding
-    texts, images = prepare_clip_inputs(data)
+        concatenated_features = torch.cat([clip_aggregated, visual_features], dim=1)  
 
-    if texts and images: 
-        _, clip_image_embeddings, _, _ = compute_clip_similarity(texts, images)
-        #print("Clip Image embedding shape:", clip_image_embeddings.shape)
+        all_image_features.append(concatenated_features)
 
-    aggregator = AttentionAggregator(512)
-    clip_aggregated = aggregator(clip_image_embeddings)  # Shape: [512]
-    clip_aggregated = clip_aggregated.unsqueeze(0).repeat(g, 1)  # [5, 512]
-    #print("clip aggregated features:", clip_aggregated.shape)
+    stacked_features = torch.cat(all_image_features, dim=0)  
+    #print(f" Final Image Features Shape (Stacked): {stacked_features.shape}")
 
-    concatenated_features = torch.cat([clip_aggregated, visual_features, region_image_feature], dim=1)  # [5, 4608]
+    min_size = min(stacked_features.shape[0], 1271)  
+    stacked_features = stacked_features[:min_size]  
 
-    projector = ImageFeatureProjector(input_dim=4608, output_dim=256)
-    projected_features = projector(concatenated_features)
+    return stacked_features  
 
-    return projected_features
+def image_features(file_path, device):
+    #print("Extracting image features...")
+    image_features = get_image_features(file_path, data_dir, g, device)
+    #print(f"Image Features Shape: {image_features.shape}")  
+    texts, images = prepare_clip_inputs(load_data(file_path, percentage=0.1))
+    _, clip_image_embeddings, _, _ = compute_clip_similarity(texts, images)
+
+    clip_image_embeddings = clip_image_embeddings.to(device)
+
+    min_size = min(image_features.shape[0], clip_image_embeddings.shape[0])
+    image_features = image_features[:min_size]
+    clip_image_embeddings = clip_image_embeddings[:min_size]
+
+    final_concat = torch.cat([image_features, clip_image_embeddings], dim=1)  
+
+    return final_concat 
 
 
-def image_features(file_path):
-    image_features = get_image_features(file_path, data_dir, g, region_image_embeds)
-    print("Image features:", image_features.shape)
-    if image_features is not None:
-        feature_dim = image_features.shape[1]  # Get the feature dimension
+# def main():
+#     print(f"Using device: {device}")
+#     file_path = "twitter/train.jsonl"
+#     image_embeddings = image_features(file_path, device)
 
-        image_projection = ProjectionClassifier(input_dim=feature_dim)
+#     if image_embeddings is None:
+#         print("image_features() returned None!")
+#     else:
+#         print(f"image_features() returned shape: {image_embeddings.shape}")
 
-        # Forward pass
-        output = image_projection(image_features)
-        print("Image Projection Output Shape:", output.shape)  # Expected: [batch_size, 2]
-    else:
-        print("No valid image features found.")
-
-def main():
-    file_path = "twitter/train.jsonl"
-    image_features(file_path)
-
-if __name__ == "__main__":
-    main()
-
+# if __name__ == "__main__":
+#     main()
