@@ -3,12 +3,15 @@ import torch
 import numpy as np
 import torch.nn as nn
 import os
-from data_loader import load_data
+#from data_loader import load_data
+from weibo_data_loader import load_data
 from clip_similarity import prepare_clip_inputs, compute_clip_similarity
 
 g = 5  
-file_path = "twitter/train.jsonl"
-data_dir = "twitter"
+# file_path = "twitter/train.jsonl"
+# data_dir = "twitter"
+file_path = "weibo/train.jsonl"
+data_dir = "weibo"
 batch_size = 64
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -92,15 +95,15 @@ def image_features(file_path, device):
     return final_concat 
 
 
-# def main():
-#     print(f"Using device: {device}")
-#     file_path = "twitter/train.jsonl"
-#     image_embeddings = image_features(file_path, device)
+def main():
+    print(f"Using device: {device}")
+    file_path = "weibo/train.jsonl"
+    image_embeddings = image_features(file_path, device)
 
-#     if image_embeddings is None:
-#         print("image_features() returned None!")
-#     else:
-#         print(f"image_features() returned shape: {image_embeddings.shape}")
+    if image_embeddings is None:
+        print("image_features() returned None!")
+    else:
+        print(f"image_features() returned shape: {image_embeddings.shape}")
 
-# if __name__ == "__main__":
-#     main()
+if __name__ == "__main__":
+    main()
