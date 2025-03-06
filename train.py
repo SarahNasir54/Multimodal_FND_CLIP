@@ -2,7 +2,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader, random_split
+from torch.utils.data import Dataset, DataLoader
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 import torch.optim as optim
 from text_embedding_projection import text_features
@@ -10,35 +10,7 @@ from clip_similarity_projection import clip_features
 from image_projection import image_features
 from data_loader import get_labels
 from text_and_clip_fusion import TransformerFusion
-import copy
 
-
-# ===============================
-# **Early Stopping Class**
-# ===============================
-class EarlyStopping:
-    def __init__(self, patience=5, min_delta=0.001):
-        self.patience = patience
-        self.min_delta = min_delta
-        self.counter = 0
-        self.best_loss = float("inf")
-        self.best_model = None
-
-    def __call__(self, val_loss, model):
-        if val_loss < self.best_loss - self.min_delta:
-            self.best_loss = val_loss
-            self.best_model = copy.deepcopy(model.state_dict())  # Save best model
-            self.counter = 0
-        else:
-            self.counter += 1
-
-        return self.counter >= self.patience  # Stop if patience is exceeded
-
-
-
-# ===============================
-# **Dataset Class**
-# ===============================        
 
 class MultimodalDataset(Dataset):
     def __init__(self, text_features, clip_features, similarity_scores, image_features, labels):
@@ -60,15 +32,14 @@ class MultimodalDataset(Dataset):
             "label": self.labels[idx]
         }
 
-def train(model, train_loader, val_loader, criterion, optimizer, device, epochs=50, patience=5):
+def train(model, dataloader, criterion, optimizer, device, epochs=50):
     print("Training...")
     model.train()
-    early_stopping = EarlyStopping(patience=patience)
     
     for epoch in range(epochs):
         total_loss, correct, total = 0, 0, 0
         
-        for batch in train_loader:
+        for batch in dataloader:
             text = batch["text"].to(device)
             clip = batch["clip"].to(device)
             similarity = batch["similarity"].to(device)
@@ -90,21 +61,14 @@ def train(model, train_loader, val_loader, criterion, optimizer, device, epochs=
             preds = torch.argmax(outputs, dim=1)
             correct += (preds == labels).sum().item()
             total += labels.size(0)
-
-        train_loss = total_loss / len(train_loader)
-        train_acc = correct / total    
-
-        # Validate Model after each epoch
-        val_loss, val_acc = evaluate(model, val_loader, criterion, device, return_loss=True)
         
-        print(f"Epoch {epoch+1}/{epochs} | Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f} | Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}")
+        print(f"Epoch {epoch+1}/{epochs}, Loss: {total_loss/len(dataloader):.4f}, Accuracy: {correct/total:.4f}")
        
 
-def evaluate(model, dataloader, device, return_loss=False):
+def evaluate(model, dataloader, device):
     print("Evaluation...")
     model.eval()
     preds_list, labels_list = [], []
-    total_loss, total = 0, 0
 
     with torch.no_grad():
         for batch in dataloader:
@@ -115,8 +79,6 @@ def evaluate(model, dataloader, device, return_loss=False):
             labels = batch["label"].to(device)
 
             outputs = model(text, clip, image, similarity)
-            loss = criterion(outputs, labels)  # Compute loss
-
             preds = torch.argmax(outputs, dim=1)
 
             preds_list.extend(preds.cpu().numpy())
@@ -126,10 +88,6 @@ def evaluate(model, dataloader, device, return_loss=False):
     precision, recall, f1, _ = precision_recall_fscore_support(labels_list, preds_list, average="weighted")
 
     print(f"Accuracy: {accuracy:.4f}, Precision: {precision:.4f}, Recall: {recall:.4f}, F1-score: {f1:.4f}")
-
-    if return_loss:
-        return total_loss / len(dataloader), accuracy
-    return accuracy
 
 
 
@@ -151,17 +109,9 @@ similarity_scores = similarity_scores[:min_size]
 image_embeddings = image_embeddings[:min_size]
 labels = labels[:min_size]
 
-# **Train-Validation Split (80-20)**
-train_size = int(0.8 * min_size)
-val_size = min_size - train_size
-
-train_dataset, val_dataset = random_split(
-    MultimodalDataset(text_embeddings, clip_embeddings, similarity_scores, image_embeddings, labels),
-    [train_size, val_size]
-)
-
+# Create training dataset & dataloader
+train_dataset = MultimodalDataset(text_embeddings, clip_embeddings, similarity_scores, image_embeddings, labels)
 train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False)
 
 # Load evaluation data
 eval_file_path = "twitter/test.jsonl"
@@ -189,10 +139,7 @@ eval_loader = DataLoader(eval_dataset, batch_size=32, shuffle=False)
 model = TransformerFusion().to(device)  # Ensure the model handles three modalities
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.AdamW(model.parameters(), lr=2e-5)
-
-# Train the model
-train(model, train_loader, val_loader, criterion, optimizer, device, epochs=50, patience=5)
-
+train(model, train_loader, criterion, optimizer, device, epochs=50)
 
 # Evaluate the model on test data
-evaluate(model, eval_loader, criterion, device)
+evaluate(model, eval_loader, device)
