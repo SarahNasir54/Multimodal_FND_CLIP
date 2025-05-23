@@ -10,6 +10,7 @@ from clip_similarity_projection import clip_features
 from image_projection import image_features
 from data_loader import get_labels
 from text_and_clip_fusion import TransformerFusion
+from sklearn.model_selection import train_test_split
 
 
 class MultimodalDataset(Dataset):
@@ -93,15 +94,13 @@ def evaluate(model, dataloader, device):
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Load training data
-train_file_path = "twitter/train.jsonl"
-text_embeddings = text_features(train_file_path, device)  
-clip_embeddings, similarity_scores = clip_features(train_file_path, device)  
-image_embeddings = image_features(train_file_path, device)  
-labels = get_labels(train_file_path).to(device)  
+file_path = "twitter/train.jsonl"
+text_embeddings = text_features(file_path, device)
+clip_embeddings, similarity_scores = clip_features(file_path, device)
+image_embeddings = image_features(file_path, device)
+labels = get_labels(file_path).to(device)
 
-
-# Ensure consistent sizes across all modalities
+# Truncate to the smallest length to ensure alignment
 min_size = min(text_embeddings.shape[0], clip_embeddings.shape[0], similarity_scores.shape[0], image_embeddings.shape[0], labels.shape[0])
 text_embeddings = text_embeddings[:min_size]
 clip_embeddings = clip_embeddings[:min_size]
@@ -109,37 +108,40 @@ similarity_scores = similarity_scores[:min_size]
 image_embeddings = image_embeddings[:min_size]
 labels = labels[:min_size]
 
-# Create training dataset & dataloader
-train_dataset = MultimodalDataset(text_embeddings, clip_embeddings, similarity_scores, image_embeddings, labels)
+# Perform train-test split
+train_idx, test_idx = train_test_split(range(min_size), test_size=0.2, random_state=42, stratify=labels.cpu())
+
+# Helper function to subset tensors
+def subset(tensor, indices):
+    return tensor[torch.tensor(indices)]
+
+# Subset the data
+train_dataset = MultimodalDataset(
+    subset(text_embeddings, train_idx),
+    subset(clip_embeddings, train_idx),
+    subset(similarity_scores, train_idx),
+    subset(image_embeddings, train_idx),
+    subset(labels, train_idx)
+)
+
+test_dataset = MultimodalDataset(
+    subset(text_embeddings, test_idx),
+    subset(clip_embeddings, test_idx),
+    subset(similarity_scores, test_idx),
+    subset(image_embeddings, test_idx),
+    subset(labels, test_idx)
+)
+
+# Create DataLoaders
 train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
-# Load evaluation data
-eval_file_path = "twitter/test.jsonl"
-eval_text_embeddings = text_features(eval_file_path, device)
-eval_clip_embeddings, eval_similarity_scores = clip_features(eval_file_path, device)
-eval_image_embeddings = image_features(eval_file_path, device)
-eval_labels = get_labels(eval_file_path)
-
-
-
-
-# Ensure consistent sizes for evaluation
-eval_min_size = min(eval_text_embeddings.shape[0], eval_clip_embeddings.shape[0], eval_similarity_scores.shape[0], eval_image_embeddings.shape[0], eval_labels.shape[0])
-eval_text_embeddings = eval_text_embeddings[:eval_min_size]
-eval_clip_embeddings = eval_clip_embeddings[:eval_min_size]
-eval_similarity_scores = eval_similarity_scores[:eval_min_size] 
-eval_image_embeddings = eval_image_embeddings[:eval_min_size]
-eval_labels = eval_labels[:eval_min_size]
-
-# Create evaluation dataset & dataloader
-eval_dataset = MultimodalDataset(eval_text_embeddings, eval_clip_embeddings, eval_similarity_scores, eval_image_embeddings, eval_labels)
-eval_loader = DataLoader(eval_dataset, batch_size=32, shuffle=False)
 
 # Initialize model, loss, and optimizer
 model = TransformerFusion().to(device)  # Ensure the model handles three modalities
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.AdamW(model.parameters(), lr=2e-5)
+optimizer = optim.AdamW(model.parameters(), lr=0.0001)
 train(model, train_loader, criterion, optimizer, device, epochs=50)
 
 # Evaluate the model on test data
-evaluate(model, eval_loader, device)
+evaluate(model, test_loader, device)
